@@ -8,4 +8,5 @@ require (
 	github.com/alecthomas/repr v0.3.0 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/julienschmidt/httprouter v1.3.0
+	github.com/uptrace/bunrouter v1.0.21
 )

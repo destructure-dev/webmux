@@ -16,7 +16,7 @@ func shiftPath(p string) (head string, tail string) {
 	return p[1:i], p[i:]
 }
 
-// cleanPath returns the canonical path for p, eliminating . and .. elements.
+// cleanPath returns the canonical URL path for p.
 func cleanPath(p string) string {
 	if p == "" {
 		return "/"

@@ -51,10 +51,10 @@ type ServeMux struct {
 	root       *node
 }
 
-// NewMux allocates and returns a new ServeMux ready for use.
-func NewMux() *ServeMux {
+// New allocates and returns a new ServeMux ready for use.
+func New() *ServeMux {
 	return &ServeMux{
-		errHandler: new(StatusErrorHandler),
+		errHandler: StatusErrorHandler(),
 		pool: &sync.Pool{
 			New: func() any {
 				return new(MuxMatch)
@@ -99,9 +99,13 @@ func (mux *ServeMux) HandleMethods(methods MethodSet, pattern string, handler Ha
 	for path != "" {
 		head, tail := shiftPath(path)
 
-		if head != "" && (head[0] == ':' || head[0] == '*') {
+		if head == "" {
+			break
+		}
+
+		if head[0] == ':' || head[0] == '*' {
 			params = append(params, head[1:])
-			head = "*"
+			head = string(head[0])
 		}
 
 		next, ok := current.children[head]
@@ -159,21 +163,44 @@ func (mux *ServeMux) Lookup(r *http.Request) *MuxMatch {
 }
 
 func (mux *ServeMux) lookup(r *http.Request, match *MuxMatch) *MuxMatch {
-	path := cleanPath(r.URL.Path)
+	path := r.URL.Path
+
+	// Fast path when there aren't any path segments
+	if path == "/" && mux.root.entry != nil {
+		match.muxEntry = mux.root.entry
+		return match
+	}
+
 	current := mux.root
+	values := match.values
+	greedy := false
 
-	var entry *muxEntry
-
-	for path != "" {
+	for path != "" && !greedy {
 		head, tail := shiftPath(path)
 
+		if head == "" {
+			break
+		}
+
+		// Get the next node matching this path segment exactly
 		next, ok := current.children[head]
 
+		// If no exact match, fallback to a param
+		if !ok {
+			next, ok = current.children[":"]
+
+			if ok {
+				values = append(values, head)
+			}
+		}
+
+		// If still no match, fallback to a wildcard
 		if !ok {
 			next, ok = current.children["*"]
 
 			if ok {
-				match.values = append(match.values, head)
+				values = append(values, head+tail)
+				greedy = true
 			}
 		}
 
@@ -183,17 +210,15 @@ func (mux *ServeMux) lookup(r *http.Request, match *MuxMatch) *MuxMatch {
 
 		current = next
 		path = tail
-
-		if current.entry != nil {
-			entry = current.entry
-		}
 	}
 
-	if entry == nil {
+	// If the last segment has no entry there is no match
+	if current.entry == nil {
 		return nil
 	}
 
-	match.muxEntry = entry
+	match.muxEntry = current.entry
+	match.values = values
 
 	return match
 }
@@ -207,9 +232,9 @@ func (mux *ServeMux) ServeHTTPErr(w http.ResponseWriter, r *http.Request) error 
 		mux.pool.Put(match)
 	}()
 
-	match = mux.lookup(r, match)
+	found := mux.lookup(r, match)
 
-	if match == nil {
+	if found == nil {
 		return ErrMuxNotFound
 	}
 
@@ -333,7 +358,16 @@ func (m *MuxMatch) Param(name string) string {
 		return ""
 	}
 
-	// With only a few params so this is faster than allocating a map
+	// Special case for an un-named wildcard
+	if name == "*" {
+		if len(m.values) > 0 {
+			return m.values[len(m.values)-1]
+		}
+
+		return ""
+	}
+
+	// With only a few params this is faster than allocating a map
 	for i, k := range m.params {
 		if k == name {
 			return m.values[i]

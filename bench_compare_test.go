@@ -3,10 +3,10 @@ package webmux_test
 import (
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/uptrace/bunrouter"
 	"go.destructure.dev/webmux"
 )
 
@@ -282,18 +282,14 @@ var githubAPI = [][2]string{
 	{"DELETE", "/user/keys/:id"},
 }
 
-func newBenchHandler(v string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Content-Length", strconv.Itoa(len(v)))
-		w.Write([]byte(v))
-		w.WriteHeader(200)
+func BenchmarkGithubAPI_Webmux(b *testing.B) {
+	h := webmux.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusNoContent)
+
+		return nil
 	})
-}
 
-func BenchmarkGithubParam_Webmux(b *testing.B) {
-	h := webmux.FallibleFunc(newBenchHandler("h0"))
-
-	mux := webmux.NewMux()
+	mux := webmux.New()
 
 	r, err := http.NewRequest("GET", "/repos/golang/go/stargazers", nil)
 	if err != nil {
@@ -313,8 +309,10 @@ func BenchmarkGithubParam_Webmux(b *testing.B) {
 	}
 }
 
-func BenchmarkGithubParam_HttpRouter(b *testing.B) {
-	h := newBenchHandler("h0")
+func BenchmarkGithubAPI_HttpRouter(b *testing.B) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	mux := httprouter.New()
 
@@ -326,6 +324,33 @@ func BenchmarkGithubParam_HttpRouter(b *testing.B) {
 
 	for _, def := range githubAPI {
 		mux.Handler(def[0], def[1], h)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		mux.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkGithubAPI_BunRouter(b *testing.B) {
+	h := func(w http.ResponseWriter, r bunrouter.Request) error {
+		w.WriteHeader(http.StatusNoContent)
+
+		return nil
+	}
+
+	mux := bunrouter.New()
+
+	r, err := http.NewRequest("GET", "/repos/golang/go/stargazers", nil)
+	if err != nil {
+		b.Error("new request")
+	}
+	w := httptest.NewRecorder()
+
+	for _, def := range githubAPI {
+		mux.Handle(def[0], def[1], h)
 	}
 
 	b.ReportAllocs()

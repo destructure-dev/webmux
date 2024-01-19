@@ -21,20 +21,57 @@ func newTestHandler(v string) webmux.Handler {
 	})
 }
 
-func TestServeMuxLookupParams(t *testing.T) {
-	mux := webmux.NewMux()
+func TestServeMuxLookupParamCapture(t *testing.T) {
+	var tests = []struct {
+		name    string
+		pattern string
+		reqURL  string
+		want    map[string]string
+	}{
+		{
+			"named",
+			"/users/:user/posts/:post",
+			"/users/1/posts/2",
+			map[string]string{"user": "1", "post": "2"},
+		},
+		{
+			"wildcard",
+			"/images/*img",
+			"/images/123",
+			map[string]string{"img": "123"},
+		},
+		{
+			"wildcard greedy",
+			"/images/*img",
+			"/images/123/456",
+			map[string]string{"img": "123/456"},
+		},
+		{
+			"named and wildcard",
+			"/users/:user/images/*img",
+			"/users/1/images/123",
+			map[string]string{"user": "1", "img": "123"},
+		},
+	}
 
-	h := newTestHandler("hello")
-	mux.Handle(http.MethodGet, "/users/:user/posts/:post", h)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := webmux.New()
 
-	r := httptest.NewRequest(http.MethodGet, "/users/1/posts/2", nil)
+			h := newTestHandler(tc.pattern)
+			mux.Handle(http.MethodGet, tc.pattern, h)
 
-	match := mux.Lookup(r)
+			r := httptest.NewRequest(http.MethodGet, tc.reqURL, nil)
 
-	assert.NotZero(t, match)
-	assert.Equal(t, h, match.Handler(http.MethodGet))
-	assert.Equal(t, "1", match.Param("user"))
-	assert.Equal(t, "2", match.Param("post"))
+			match := mux.Lookup(r)
+
+			assert.NotZero(t, match)
+
+			for k, v := range tc.want {
+				assert.Equal(t, v, match.Param(k))
+			}
+		})
+	}
 }
 
 func TestServeMuxLookupPatternMatching(t *testing.T) {
@@ -45,9 +82,9 @@ func TestServeMuxLookupPatternMatching(t *testing.T) {
 		want     string
 	}{
 		{
-			"trailing slash ignored",
+			"exact over prefix",
 			[]string{"/users", "/users/*any"},
-			"/users/",
+			"/users",
 			"/users",
 		},
 		{
@@ -57,7 +94,7 @@ func TestServeMuxLookupPatternMatching(t *testing.T) {
 			"/users/new",
 		},
 		{
-			"exact over prefix",
+			"exact over wildcard",
 			[]string{"/users/new", "/users/*any"},
 			"/users/new",
 			"/users/new",
@@ -75,16 +112,28 @@ func TestServeMuxLookupPatternMatching(t *testing.T) {
 			"/",
 		},
 		{
+			"no match despite intermediate matches",
+			[]string{"/", "/:foo/bar/baz"},
+			"/1/bar", // matches 2/3 segments
+			"",
+		},
+		{
 			"params over prefix",
 			[]string{"/assets/*", "/assets/:kind/:name"},
 			"/assets/js/app.js",
 			"/assets/:kind/:name",
 		},
+		{
+			"wildcard with no matching segments",
+			[]string{"/users/*any"},
+			"/users/",
+			"",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mux := webmux.NewMux()
+			mux := webmux.New()
 
 			for _, p := range tc.patterns {
 				h := newTestHandler(p)
@@ -95,6 +144,11 @@ func TestServeMuxLookupPatternMatching(t *testing.T) {
 
 			match := mux.Lookup(r)
 
+			if tc.want == "" {
+				assert.Zero(t, match)
+				return
+			}
+
 			assert.NotZero(t, match)
 
 			assert.Equal(t, tc.want, match.Pattern())
@@ -103,7 +157,7 @@ func TestServeMuxLookupPatternMatching(t *testing.T) {
 }
 
 func TestServeMuxLookupMethodMatching(t *testing.T) {
-	mux := webmux.NewMux()
+	mux := webmux.New()
 
 	hGet := newTestHandler("GET /users")
 	mux.Handle(http.MethodGet, "/users", hGet)
@@ -121,7 +175,7 @@ func TestServeMuxLookupMethodMatching(t *testing.T) {
 }
 
 func TestServeMuxLookupMethodSetMatching(t *testing.T) {
-	mux := webmux.NewMux()
+	mux := webmux.New()
 
 	h := newTestHandler("GET|POST /users")
 	mux.HandleMethods(webmux.Methods(http.MethodGet, http.MethodPost), "/users", h)
@@ -136,26 +190,8 @@ func TestServeMuxLookupMethodSetMatching(t *testing.T) {
 	assert.Equal(t, h, match.Handler(http.MethodPost))
 }
 
-func TestServeMuxLookupIntermediateNonMatch(t *testing.T) {
-	mux := webmux.NewMux()
-
-	h1 := newTestHandler("1")
-	mux.Handle(http.MethodGet, "/*", h1)
-
-	h2 := newTestHandler("2")
-	mux.Handle(http.MethodGet, "/:foo/bar/baz", h2)
-
-	r := httptest.NewRequest(http.MethodGet, "/1/bar", nil)
-
-	match := mux.Lookup(r)
-
-	assert.NotZero(t, match)
-
-	assert.Equal(t, h1, match.Handler(http.MethodGet))
-}
-
 func ExampleHandleFunc() {
-	mux := webmux.NewMux()
+	mux := webmux.New()
 
 	greet := func(w http.ResponseWriter, r *http.Request) error {
 		m, _ := webmux.FromContext(r.Context())
@@ -175,7 +211,7 @@ func BenchmarkLookupBasic(b *testing.B) {
 	h1 := newTestHandler("h1")
 	h2 := newTestHandler("h2")
 
-	mux := webmux.NewMux()
+	mux := webmux.New()
 
 	mux.Handle(http.MethodGet, "/users/:id", h0)
 	mux.Handle(http.MethodGet, "/foo/:id", h1)

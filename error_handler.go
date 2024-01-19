@@ -20,12 +20,14 @@ func (f ErrorHandlerFunc) ErrorHTTP(w http.ResponseWriter, r *http.Request, err 
 	f(w, r, err)
 }
 
-// StatusErrorHandler is a basic error handler that just returns a HTTP status error response.
+// StatusErrorHandler returns a basic error handler that just returns a HTTP status error response.
 // Any errors are logged before writing the response.
-type StatusErrorHandler struct{}
+func StatusErrorHandler() ErrorHandler {
+	return ErrorHandlerFunc(StatusError)
+}
 
-// ErrorHTTP implements ErrorHandler.
-func (h StatusErrorHandler) ErrorHTTP(w http.ResponseWriter, r *http.Request, err error) {
+// StatusError replies to a request with an appropriate status code and HTTP status text.
+func StatusError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, ErrMuxNotFound) {
 		match, ok := FromContext(r.Context())
 
@@ -45,8 +47,7 @@ func (h StatusErrorHandler) ErrorHTTP(w http.ResponseWriter, r *http.Request, er
 	writeError(w, http.StatusInternalServerError)
 }
 
+// writeError calls [http.Error] with the [http.StatusText] for code and code.
 func writeError(w http.ResponseWriter, code int) {
 	http.Error(w, http.StatusText(code), code)
 }
-
-var _ ErrorHandler = (*StatusErrorHandler)(nil)

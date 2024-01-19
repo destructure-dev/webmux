@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	mux := webmux.NewMux()
+	mux := webmux.New()
 
 	greet := func(w http.ResponseWriter, r *http.Request) error {
 		m, _ := webmux.FromContext(r.Context())
