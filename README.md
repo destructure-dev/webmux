@@ -277,7 +277,7 @@ There weren't any other routers that hit on all the right features.
 
 Before Go 1.22 `net/http` couldn't match path patterns. Now it can but it made a lot of compromises to keep backwards compatibility. Because of those compromises it's API is confusing and error prone, and the implementation cannot be efficient.
 
-The matching logic for a lot of third party routers is complicated. And complex matching rules slow down every single request. Some routers dont' allow "conflicting" routes like `/users/:id` and `/users/new`, when intuitively you would think that should be allowed, with the exact match taking priority. Others handle trailing and duplicate slashes in inconsistent ways when they shouldn't really matter. Some depend on the order the routes were registered in the code to determine priority.
+The matching logic for a lot of third party routers is complicated. And complex matching rules slow down every single request. Some routers don't allow "conflicting" routes like `/users/:id` and `/users/new`, when intuitively you would think that should be allowed, with the exact match taking priority. Others handle trailing and duplicate slashes in inconsistent ways when they shouldn't really matter. Some depend on the order the routes were registered in the code to determine priority.
 
 Handling `OPTIONS` and `HEAD` requests correctly is important for APIs but most routers don't. A related and often overlooked issue is sending the `Allow` header in `405` responses. The router has to be designed for this up front or the method lookup will be slow, which is a problem for APIs where lots of requests get preflighted by the browser.
 
